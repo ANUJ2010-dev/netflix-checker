@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Worker script that runs in GitHub Actions.
-It performs the Netflix check and sends the result back to Telegram.
+Performs Netflix check and sends the result back to Telegram with full UI.
 """
 
 import os
@@ -13,10 +13,12 @@ from datetime import datetime, timedelta
 
 import requests
 from playwright.sync_api import sync_playwright
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-# ========== Configuration (from original bot) ==========
+# ========== Configuration ==========
 NFTOKEN_API = "https://nftoken.onrender.com/api/check-single-batch"
 TV_API = "https://netflixtvloginapi.onrender.com"
+TV_WEBSITE = "https://netflixtvloginapi.onrender.com"
 OWNER = "@ANUJXKING"
 
 # ========== Cookie helpers ==========
@@ -117,7 +119,6 @@ def _parse_account_text(body: str) -> dict:
 
 # ========== Core: full info ==========
 def generate_full_info(netflix_id: str) -> tuple:
-    logger = lambda x: None  # no logging needed in worker
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(
@@ -448,7 +449,7 @@ def _v(val, fallback="N/A"):
         return str(val).strip()
     return fallback
 
-# ========== Telegram sender ==========
+# ========== Telegram sender with inline keyboard ==========
 def send_telegram_message(chat_id: str, text: str, parse_mode='Markdown', reply_markup=None):
     token = os.environ.get('BOT_TOKEN')
     if not token:
@@ -462,11 +463,26 @@ def send_telegram_message(chat_id: str, text: str, parse_mode='Markdown', reply_
         'disable_web_page_preview': True
     }
     if reply_markup:
-        payload['reply_markup'] = reply_markup
+        if hasattr(reply_markup, 'to_json'):
+            payload['reply_markup'] = reply_markup.to_json()
+        else:
+            payload['reply_markup'] = reply_markup
     try:
         requests.post(url, json=payload)
     except Exception as e:
         print(f"Failed to send message: {e}")
+
+def make_inline_keyboard(pc_link, android_link, tv_website):
+    keyboard = [
+        [
+            InlineKeyboardButton("📱 Phone Login", url=android_link),
+            InlineKeyboardButton("🖥️ PC Login", url=pc_link)
+        ],
+        [
+            InlineKeyboardButton("📺 TV Login Code", url=tv_website)
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
 
 # ========== Main ==========
 def main():
@@ -478,14 +494,14 @@ def main():
         print("Missing required environment variables")
         return
 
-    send_telegram_message(chat_id, "⚡ Processing your request (GitHub worker)...")
+    send_telegram_message(chat_id, "⚡ *Processing your request...*", parse_mode='Markdown')
 
     if command == 'token':
         success, result = generate_token_only(cookie)
         if success:
             text = (
-                "🌟 *Token Generated*\n\n"
-                f"✅ Status: Valid\n"
+                "🌟 *Token Generated* 🌟\n\n"
+                f"✅ *Status:* Valid\n\n"
                 f"📱 [Phone Login]({result['android_link']})\n"
                 f"🖥️ [PC Login]({result['pc_link']})\n\n"
                 f"💡 _Use /chk for full account details!_\n\n"
@@ -498,8 +514,8 @@ def main():
         success, data = generate_full_info(cookie)
         if success:
             card = build_account_card(data['info'], data['pc_link'], data['android_link'])
-            # Inline keyboard for TV login can't be sent from here easily, but we can omit.
-            send_telegram_message(chat_id, card)
+            keyboard = make_inline_keyboard(data['pc_link'], data['android_link'], TV_WEBSITE)
+            send_telegram_message(chat_id, card, reply_markup=keyboard)
         else:
             send_telegram_message(chat_id, f"❌ *Cookie Invalid!*\n\n`{data.get('error', 'Unknown error')}`")
 
