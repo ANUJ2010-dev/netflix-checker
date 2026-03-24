@@ -1,0 +1,43 @@
+name: Netflix Check
+
+on:
+  workflow_dispatch:
+    inputs:
+      cookie:
+        description: 'NetflixId value'
+        required: true
+        type: string
+      chat_id:
+        description: 'Telegram chat ID'
+        required: true
+        type: string
+      command:
+        description: 'Command type (full or token)'
+        required: true
+        default: 'full'
+        type: string
+
+jobs:
+  run-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install playwright requests python-telegram-bot
+          playwright install chromium --with-deps
+
+      - name: Run checker
+        env:
+          COOKIE: ${{ inputs.cookie }}
+          CHAT_ID: ${{ inputs.chat_id }}
+          COMMAND: ${{ inputs.command }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+        run: python worker.py
